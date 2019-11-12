@@ -90,7 +90,7 @@ func (cli CLI) swap() error {
 
 	for i := 0; i < 5; i++ {
 		if _, err := os.Lstat(cli.Replacement); err != nil {
-			return err
+			return fmt.Errorf("failed to lstat replacement: %v", err)
 		}
 		err = os.Rename(cli.Replacement, cli.BinaryPath)
 		if err == nil {
@@ -110,6 +110,7 @@ func main() {
 
 	swaps := cli.watch()
 	for {
+		log.Printf("starting binary: %v\n", cli.BinaryPath)
 		cmd := cli.cmd()
 		if err := cmd.Start(); err != nil {
 			log.Fatalf("failed to start command: %v", err)

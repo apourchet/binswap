@@ -9,20 +9,23 @@ import (
 )
 
 type CLI struct {
-	BinaryPath string
-	Rest       []string
+	OriginalBinaryPath string
+	BinaryPath         string
+	Rest               []string
 
 	Replacement string
+	Count       int
 }
 
-func parseArgs() (CLI, error) {
+func parseArgs() (*CLI, error) {
 	if len(os.Args) < 2 {
-		return CLI{}, fmt.Errorf("must provide at least 1 argument")
+		return nil, fmt.Errorf("must provide at least 1 argument")
 	}
 
-	cli := CLI{
-		BinaryPath: os.Args[1],
-		Rest:       os.Args[2:],
+	cli := &CLI{
+		OriginalBinaryPath: os.Args[1],
+		BinaryPath:         os.Args[1],
+		Rest:               os.Args[2:],
 	}
 	cli.Replacement = os.Getenv("BINSWAP_REPLACEMENT")
 	if cli.Replacement == "" {
@@ -31,7 +34,7 @@ func parseArgs() (CLI, error) {
 	return cli, nil
 }
 
-func (cli CLI) lastMod() (time.Time, error) {
+func (cli *CLI) lastMod() (time.Time, error) {
 	info, err := os.Lstat(cli.Replacement)
 	if err != nil && !os.IsNotExist(err) {
 		return time.Unix(0, 0), fmt.Errorf("failed to stat replacement location: %v", cli.Replacement)
@@ -42,7 +45,7 @@ func (cli CLI) lastMod() (time.Time, error) {
 	return info.ModTime(), nil
 }
 
-func (cli CLI) watch() chan struct{} {
+func (cli *CLI) watch() chan struct{} {
 	swaps := make(chan struct{})
 	go func() {
 		lastMod, err := cli.lastMod()
@@ -68,7 +71,7 @@ func (cli CLI) watch() chan struct{} {
 	return swaps
 }
 
-func (cli CLI) cmd() *exec.Cmd {
+func (cli *CLI) cmd() *exec.Cmd {
 	cmd := exec.Command(cli.BinaryPath, cli.Rest...)
 	cmd.Env = os.Environ()
 	cmd.Stdout = os.Stdout
@@ -76,7 +79,7 @@ func (cli CLI) cmd() *exec.Cmd {
 	return cmd
 }
 
-func (cli CLI) reap(swaps chan struct{}, cmd *exec.Cmd) {
+func (cli *CLI) reap(swaps chan struct{}, cmd *exec.Cmd) {
 	<-swaps
 	log.Println("Noticed binary swap, killing")
 	if err := cmd.Process.Kill(); err != nil {
@@ -85,21 +88,31 @@ func (cli CLI) reap(swaps chan struct{}, cmd *exec.Cmd) {
 	}
 }
 
-func (cli CLI) swap() error {
-	var err error
+func (cli *CLI) swap() error {
+	if _, err := os.Lstat(cli.Replacement); err != nil {
+		return fmt.Errorf("failed to lstat replacement: %v", err)
+	}
 
-	for i := 0; i < 5; i++ {
-		if _, err := os.Lstat(cli.Replacement); err != nil {
-			return fmt.Errorf("failed to lstat replacement: %v", err)
+	if cli.BinaryPath != cli.OriginalBinaryPath {
+		for {
+			if err := os.Remove(cli.BinaryPath); err != nil {
+				log.Printf("failed to remove old binary: %v", err)
+				continue
+			}
+			break
 		}
-		err = os.Rename(cli.Replacement, cli.BinaryPath)
+	}
+
+	cli.BinaryPath = fmt.Sprintf("%s-%d", cli.OriginalBinaryPath, cli.Count)
+	cli.Count++
+	for {
+		err := os.Rename(cli.Replacement, cli.BinaryPath)
 		if err == nil {
 			return nil
 		}
+		log.Printf("failed to swap binaries: %v", err)
 		time.Sleep(500 * time.Millisecond)
 	}
-
-	return err
 }
 
 func main() {

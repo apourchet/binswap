@@ -86,10 +86,20 @@ func (cli CLI) reap(swaps chan struct{}, cmd *exec.Cmd) {
 }
 
 func (cli CLI) swap() error {
-	if _, err := os.Lstat(cli.Replacement); err != nil {
-		return err
+	var err error
+
+	for i := 0; i < 5; i++ {
+		if _, err := os.Lstat(cli.Replacement); err != nil {
+			return err
+		}
+		err = os.Rename(cli.Replacement, cli.BinaryPath)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
-	return os.Rename(cli.Replacement, cli.BinaryPath)
+
+	return err
 }
 
 func main() {
@@ -112,7 +122,7 @@ func main() {
 
 		log.Println("Binary killed. Performing swap")
 		if err := cli.swap(); err != nil {
-			log.Fatalf("failed to start command: %v", err)
+			log.Fatalf("failed to perform swap: %v", err)
 		}
 	}
 }

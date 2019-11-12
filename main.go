@@ -113,7 +113,9 @@ func main() {
 		log.Printf("starting binary: %v\n", cli.BinaryPath)
 		cmd := cli.cmd()
 		if err := cmd.Start(); err != nil {
-			log.Fatalf("failed to start command: %v", err)
+			log.Printf("failed to start command: %v", err)
+			time.Sleep(1 * time.Second)
+			continue
 		}
 
 		go cli.reap(swaps, cmd)
@@ -123,7 +125,9 @@ func main() {
 
 		log.Println("Binary killed. Performing swap")
 		if err := cli.swap(); err != nil {
-			log.Fatalf("failed to perform swap: %v", err)
+			log.Printf("failed to perform swap: %v", err)
+			time.Sleep(1 * time.Second)
+			continue
 		}
 	}
 }
